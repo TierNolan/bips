@@ -1,0 +1,188 @@
+<pre>
+  BIP: CPRKV
+  Title: CHECKPRIVATEKEYVERIFY
+  Author: tier.nolan@gmail.com
+  Status: Draft
+  Type: Standards Track
+  Created: 2016-02-11
+</pre>
+
+==Abstract==
+
+This BIP describes a new opcode (CHECKPRIVATEKEYVERIFY) that extends the Bitcoin
+scripting language.  It allows a script to check that a private key matches a public key.
+
+==Summary==
+
+CHECKPRIVATEKEYVERIFY (CPRKV) redefines the NOP3 opcode.  When executed it checks the top 2
+elements on the stack.  The topmost element is interpreted as a public key using the 
+same format as the CHECKSIG opcode.  The second element is interpreted as a 
+private key.  The private key is a 256 bit unsigned integer and is encoded as a 
+a 32 byte array representing the key in big endian format.
+
+The script interpreter will terminate with an error if any of the following conditions occur.
+
+* the stack has fewer than 2 elements; or
+* the top item on the stack does not encoded a valid public key; or
+* the second element on the stack is not exactly 32 bytes; or
+* the public and private keys encoded by the top two elements on the stack don't match
+
+Otherwise, script execution will continue as if a NOP had been executed.
+
+==Motivation==
+
+This opcode allows an output to be locked, unless the spender publishes a private key which
+matches a given public key.
+
+When combined with CHECKLOCKTIMEVERIFY (CLTV), this opcode allows a party to commit to
+releasing the private key associated with a given public key at some point in the
+future.
+
+Under the protocol, Bob creates a transaction which pays a deposit (D) to the following output.
+
+    IF
+      <now + 30 days> CLTV DROP <Alice's public key> CHECKSIG
+    ELSE
+      <locked public key> CPRKV 2DROP <Bob's public key> CHECKSIG
+    END
+
+If Bob doesn't spend the output within 30 days, then Alice can claim the deposit.  When
+Bob spends the output, he must provide the private key associated with the locked public key
+in order to spend the output using the bottom branch of the if.
+
+This means that the output acts as a commitment to release the private key.  Alice will either
+receive the private key within 30 days or she will receive the deposit as compensation.
+
+=== Payment Channel Setup on Legacy Altcoins ===
+
+Coins can be assigned a type based on the functionality provided.
+
+* Type 1 coins have strict IsStandard rules
+* Type 2 coins have relaxed IsStandard rules for P2SH outputs
+* Type 3 coins support CLTV
+* Type 4+ coins will have malleability fixed and/or relative CLTV, etc.
+
+Bitcoin moved from type 1 to type 2 with the release of 0.10 and from type 2 to type 3
+with the release of 0.11.
+
+It is not possible to safely setup a channel on a coin that suffers from malleability unless
+the coin supports CLTV.  Bitcoin can be used as a trusted 3rd party to allow the channel to be
+created without the need for an actual 3rd party.
+
+To setup a channel, Alice must pay to a transaction output that locks the funds for a set 
+period.  The micropayment channel protocol uses a presigned refund transaction to guarantee that
+Alice will be refunded.  She cannot broadcast the transaction early due to the use of the locktime
+field.  Once Alice receives the refund transaction she can broadcast the bail-in
+transaction.  Due to malleability, the refund transaction can be invalidated after the bail-in 
+transaction is broadcast and this leaves Alice subject to hold-up risk.
+
+CPRKV gives an alternative.  Bob puts up a deposit on the Bitcoin network to promise that he will
+release the private key within 30 days.  The deposit must be more valuable than the funds being
+locked up.
+
+The protocol is
+
+* Bob commits to release locked_private_key within 30 days
+* Alice pays to a 2 of 2 multisig which uses Alice's public key and the locked public key
+
+Alice is guaranteed to get the deposit or locked private key within 30 days.  That means that
+there is no hold-up risk.
+
+Once the bail-in is broadcast, the protocol proceeds as normal.
+
+=== Atomic Cross Chain Transfers ===
+
+CLTV make atomic cross chain transfers secure [1].  Since many altcoins don't support CLTV,
+secure transfers cannot be made to those coins.  CPRKV would allow transfers to be made
+securely.
+
+In this protocol Bob is trading b Bitcoins for a altcoins.
+
+Step 1) Bob pays his deposit
+
+Bob pays D Bitcoins to
+
+    IF
+      <now + 2 days> CLTV DROP <Alice's normal public key> CHECKSIG
+    ELSE
+      <Bob's timelocked public key> CPRKV 2DROP <Bob's normal public key>
+    ENDIF
+
+Bob promises to release his timelocked private key within 2 days.
+
+Step 2) Alice bails in
+
+Alice pays a altcoins to
+
+    <2> <Bob's timelocked public key> <Alice's timelocked public key> <2> CHECKMULTISIG
+
+Since Bob will release his private key within 2 days, there is no hold-up risk for Alice.
+
+Step 3) Bob bails in
+
+Bob pays b Bitcoins to
+
+    IF
+      <now + 1 day> CLTV DROP <Bob's normal public key> CHECKSIG
+    ELSE
+      <Alice's timelocked public key> CPRKV 2DROP <Alice's normal public key> CHECKSIG
+    ENDIF
+
+Step 4) Alice claims her Bitcoins
+
+By spending the output from step 3, Alice must publish her timelocked private key.  She must
+do that within 1 day or Bob will reclaim the output.
+
+Step 5) Bob claims his altcoins
+
+Bob uses his own and Alice's timelocked private keys to spends the output from step 2.
+
+Alice cannot spend this output since only Bob has both private keys and at most 1 day has
+passed.
+
+Step 6) Bob reclaims his deposit
+
+Bob spends the output from the deposit transaction.  He must release his timelocked
+private key at this point.  Since he has already spent the output from step 2, this
+information does not help Alice.
+
+A version of the protocol is described in [2] but it uses the cut and choose method 
+to emulate the effect of this opcode.
+The cut and choose method requires much more processing and
+is secure only under the assumption that the one party will not spend money to
+harm another party.
+
+==Specification==
+
+The description in the summary covers the intended operation.
+
+Since the opcode requires an ECC multiply, it should count towards the sigops
+count for the block.
+
+TBD
+
+==Deployment==
+
+The standard soft fork process can be used.
+
+TBD
+
+===SPV Clients===
+
+SPV clients do not perform transaction validation, so are unaffected.
+
+==References==
+
+[1] https://bitcointalk.org/index.php?topic=1248631.msg12986992#msg12986992
+
+[2] https://bitcointalk.org/index.php?topic=1340621.msg13828271#msg13828271
+
+==Implementations==
+
+TBD
+
+
+==Copyright==
+
+This document is placed in the public domain.
+
