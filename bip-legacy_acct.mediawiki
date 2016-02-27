@@ -130,7 +130,7 @@ Bob pays D Bitcoins to
 
 Bob promises to release bob_priv_key_n within 2 days.
 
-Step 4) Alice bails in
+Step 5) Alice bails in
 
 Alice pays a altcoins to
 
@@ -138,7 +138,7 @@ Alice pays a altcoins to
 
 Since Bob will release his private key within 2 days, there is no hold-up risk for Alice.
 
-Step 3) Bob bails in
+Step 6) Bob bails in
 
 Bob pays b Bitcoins to
 
@@ -150,19 +150,19 @@ Bob pays b Bitcoins to
 
 This allows Alice to claim the Bitcoins, but only by releasing alice_priv_key_m.
 
-Step 5) Alice claims her Bitcoins
+Step 7) Alice claims her Bitcoins
 
 By spending the output from step 3, Alice must publish her timelocked private key.  She must
 do that within 1 day or Bob will reclaim the output.
 
-Step 6) Bob claims his altcoins
+Step 8) Bob claims his altcoins
 
 Bob uses his own and Alice's timelocked private keys to spends the output from step 2.
 
 Alice cannot spend this output since only Bob has both private keys and at most 1 day has
 passed.
 
-Step 7) Bob reclaims his deposit
+Step 9) Bob reclaims his deposit
 
 Bob spends the output from the deposit transaction.  He must release his timelocked
 private key at this point.  Since he has already spent the output from step 2, this
