@@ -1,0 +1,195 @@
+<pre>
+  BIP: L-ACCT
+  Title: Legacy atomic cross chain transfer
+  Author: tier.nolan@gmail.com
+  Status: Draft
+  Type: Information
+  Created: 2016-02-26
+</pre>
+
+==Abstract==
+
+This BIP describes a protocol for performing cross chain transfers between the Bitcoin
+network and an altcoin.  This protocol supports altcoins that have strict IsStandard()
+rules and does not require advanced script functionality.
+
+==Summary==
+
+Many altcoins are forks of Bitcoin Core.  Adding new features from Bitcoin Core requires
+maintainence of the altcoin.  In many cases, the altcoin remains static as the developer
+is either unwilling or unable to incorporate new features into the altcoin's codebase.
+
+Two major features that affect cross-chain transfers are the IsStandard() rules and
+the new CHECKLOCKTIMEVERIFY opcode.  Few altcoins support CHECKLOCKTIMEVERIFY but many
+still have the oldest (most strict) rules for IsStandard().  The latest Bitcoin Core
+software has much less strict checks when dealing with outputs that are encoded with
+P2SH.
+
+The IsStandard() changes means that outputs aren't limited to just the standard scripts.
+For altcoins that have the legacy/strict IsStandard() rules, it is difficult to reliabily
+have transactions accepted into the blockchain.  This means that timeouts could pass
+even though a party was attempting to comply with the protocol.
+
+The new CHECKLOCKTIMEVERIFY opcode is extremely useful for setting up timeouts for the
+protocol.  This is necessary so that if a party violates the protocol the other party
+can be given a chance to prevent this violation from resulting in losses of the funds.
+
+The protocol described in this BIP leverages the functionality supported by the Bitcoin
+blockchain to 
+
+==Motivation==
+
+The protocol described in this BIP allows atomic transfers between Bitcoin and any
+altcoin which supports 2 of 2 multisig.  This means that a single protocol can be used
+for trading.  A more advanced implementation could use easier protocols if the altcoin
+supports more advanced features.
+
+=== Legacy Altcoins ===
+
+Coins can be assigned a type based on the functionality provided.
+
+* Type 1 coins have strict IsStandard rules
+* Type 2 coins have relaxed IsStandard rules for P2SH outputs
+* Type 3 coins support CLTV
+* Type 4+ coins will have malleability fixed and/or relative CLTV, etc.
+
+Bitcoin moved from type 1 to type 2 with the release of 0.10 and from type 2 to type 3
+with the release of 0.11.
+
+=== Specification ===
+
+In this protocol Bob is trading b Bitcoins for a altcoins.
+
+Step 1) Commit to Key Pairs
+
+Bob selects N key pairs and a random 20 byte array bob_fee_unlock.
+
+bob_pub_key_array_hash is the hash160 of the concatenation of the N public keys.
+bob_private_key_hash_array_hash is the hash160 of the concatenation of the hash160s of the N private keys.
+
+Bob sends bob_pub_key_array_hash, bob_private_key_hash_array_hash and hash(bob_fee_unlock) to Alice.
+
+Alice does the same and sends alice_pub_key_array_hash, alice_private_key_hash_array_hash and hash(alice_fee_unlock) to Bob
+
+Step 2) Create fee transaction
+
+Alice and Bob fund a Bitcoin transaction that pays to three outputs.
+
+The transaction has 3 outputs and two change outputs to pay change back to Bob and Alice.
+
+Output 0 pays fee to
+    
+    IF
+      HASH160 <hash(bob_fee_unlock)> EQUALVERIFY <alice_fee_public_key> CHECKSIG
+    ELSE
+      <now + 7 days> CLTV <ttp_public_key> CHECKSIG
+    ENDIF
+    
+Output 1 pays fee to
+    
+    IF
+      HASH160 <hash(alice_fee_unlock)> EQUALVERIFY <bob_fee_public_key> CHECKSIG
+    ELSE
+      <now + 7 days> CLTV <ttp_public_key> CHECKSIG
+    ENDIF
+    
+Output 2 pays ttp_fee to
+    
+    <now + 7 days> CLTV OP_1 <ttp_public_key> <public_key_encode(hash160(bob_pub_key_array_hash | alice_pub_key_array_hash))> CHECKSIG
+    
+Alice can claim the first output, but only if she knows bob_fee unlock.  Bob can likewise claim the second
+output but only if he knows alice_fee_unlock.
+
+The third output is a fee to the trusted third party.  The trusted third party is not required, but eliminates the hold up risk if the other
+party refuses to complete the protocol.
+
+Step 3) Choose Step
+
+Once the fee transaction has been confirmed, both parties perform the choose step of the cut and choose.
+
+Alice picks a key pair, n, at random.  Bob sends all the public keys and all the private keys except the one for the pair
+that Alice picked.  For the one that Alice picked, he only sends that hash160 of the key, bob_private_key_n_hash.
+
+Alice verifies that the key pairs match, that the array of public keys hashes to the committed hash and that the array of hashes of the private keys hashes to the committed hash.
+
+This gives Alice confidence that the x for hash(x) = bob_priv_key_n_hash is actually the private key that matches bob_pub_key_n.
+
+Bob does the reverse to get alice_priv_key_m_hash and has confidence that its preimage is the private key for alice_pub_key_m.
+
+The purpose of the cut and choose step is to allow Alice and Bob to create commitments to private keys associated with public keys.
+
+Step 4) Bob pays his deposit
+
+Bob pays D Bitcoins to
+
+    IF
+      <now + 2 days> CLTV DROP <alice_pub_key_deposit_claim> CHECKSIG
+    ELSE
+      HASH160 <bob_priv_key_n_hash> EQUALVERIFY <bob_pub_key_deposit_reclaim> CHECKSIG
+    ENDIF
+
+Bob promises to release bob_priv_key_n within 2 days.
+
+Step 2) Alice bails in
+
+Alice pays a altcoins to
+
+    <2> <bob_priv_key_n> <alice_pub_key_m> <2> CHECKMULTISIG
+
+Since Bob will release his private key within 2 days, there is no hold-up risk for Alice.
+
+Step 3) Bob bails in
+
+Bob pays b Bitcoins to
+
+    IF
+      <now + 1 day> CLTV DROP <bob_pub_key_reclaim_bail_in> CHECKSIG
+    ELSE
+      HASH160 <alice_priv_key_m_hash> EQUALVERIFY <alice_pub_key_claim_trade> CHECKSIG
+    ENDIF
+
+This allows Alice to claim the Bitcoins, but only by releasing alice_priv_key_m.
+
+Step 4) Alice claims her Bitcoins
+
+By spending the output from step 3, Alice must publish her timelocked private key.  She must
+do that within 1 day or Bob will reclaim the output.
+
+Step 5) Bob claims his altcoins
+
+Bob uses his own and Alice's timelocked private keys to spends the output from step 2.
+
+Alice cannot spend this output since only Bob has both private keys and at most 1 day has
+passed.
+
+Step 6) Bob reclaims his deposit
+
+Bob spends the output from the deposit transaction.  He must release his timelocked
+private key at this point.  Since he has already spent the output from step 2, this
+information does not help Alice.
+
+=== Security Analysis ===
+
+The description in the summary covers the intended operation.
+
+Since the opcode requires an ECC multiply, it should count towards the sigops
+count for the block.
+
+TBD
+
+==References==
+
+[1] https://bitcointalk.org/index.php?topic=1248631.msg12986992#msg12986992
+
+[2] https://bitcointalk.org/index.php?topic=1340621.msg13828271#msg13828271
+
+==Implementations==
+
+TBD
+
+
+==Copyright==
+
+This document is placed in the public domain.
+
+
