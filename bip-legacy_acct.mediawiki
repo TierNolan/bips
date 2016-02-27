@@ -125,7 +125,7 @@ Bob pays D Bitcoins to
     IF
       <now + 2 days> CLTV DROP <alice_pub_key_deposit_claim> CHECKSIG
     ELSE
-      HASH160 <bob_priv_key_n_hash> EQUALVERIFY <bob_pub_key_deposit_reclaim> CHECKSIG
+      HASH160 <bob_priv_key_n_hash> EQUALVERIFY HASH160 <bob_fee_unlock> EQUALVERIFY <bob_pub_key_deposit_reclaim> CHECKSIG
     ENDIF
 
 Bob promises to release bob_priv_key_n within 2 days.
@@ -145,7 +145,7 @@ Bob pays b Bitcoins to
     IF
       <now + 1 day> CLTV DROP <bob_pub_key_reclaim_bail_in> CHECKSIG
     ELSE
-      HASH160 <alice_priv_key_m_hash> EQUALVERIFY <alice_pub_key_claim_trade> CHECKSIG
+      HASH160 <alice_priv_key_m_hash> EQUALVERIFY HASH160 <alice_fee_unlock> EQUALVERIFY <alice_pub_key_claim_trade> CHECKSIG
     ENDIF
 
 This allows Alice to claim the Bitcoins, but only by releasing alice_priv_key_m.
@@ -170,12 +170,8 @@ information does not help Alice.
 
 === Security Analysis ===
 
-The description in the summary covers the intended operation.
 
-Since the opcode requires an ECC multiply, it should count towards the sigops
-count for the block.
 
-TBD
 
 ==References==
 
