@@ -82,13 +82,13 @@ Output 0 pays fee to
     IF
       HASH160 <hash(bob_fee_unlock)> EQUALVERIFY <alice_fee_public_key> CHECKSIG
     ELSE
-      <now + 7 days> CLTV <ttp_public_key> CHECKSIG
+      <now + 8 days> CLTV <ttp_public_key> CHECKSIG
     ENDIF
     
 Output 1 pays fee to
     
     IF
-      HASH160 <hash(alice_fee_unlock)> EQUALVERIFY <bob_fee_public_key> CHECKSIG
+      HASH160 <hash(alice_fee_unlock)> EQUALVERIFY HASH160 <hash(bob_fee_unlock)> EQUALVERIFY <bob_fee_public_key> CHECKSIG
     ELSE
       <now + 7 days> CLTV <ttp_public_key> CHECKSIG
     ENDIF
@@ -98,7 +98,8 @@ Output 2 pays ttp_fee to
     <now + 7 days> CLTV OP_1 <ttp_public_key> <public_key_encode(hash160(bob_pub_key_array_hash | alice_pub_key_array_hash))> CHECKSIG
     
 Alice can claim the first output, but only if she knows bob_fee unlock.  Bob can likewise claim the second
-output but only if he knows alice_fee_unlock.
+output but only if he knows alice_fee_unlock.  Additionally, if Bob reclaims his deposit, he must tell Alice
+what the fee unlock code is.
 
 The third output is a fee to the trusted third party.  The trusted third party is not required, but eliminates the hold up risk if the other
 party refuses to complete the protocol.
@@ -125,7 +126,7 @@ Bob pays D Bitcoins to
     IF
       <now + 2 days> CLTV DROP <alice_pub_key_deposit_claim> CHECKSIG
     ELSE
-      HASH160 <bob_priv_key_n_hash> EQUALVERIFY HASH160 <bob_fee_unlock> EQUALVERIFY <bob_pub_key_deposit_reclaim> CHECKSIG
+      HASH160 <bob_priv_key_n_hash> EQUALVERIFY <bob_pub_key_deposit_reclaim> CHECKSIGVERIFY
     ENDIF
 
 Bob promises to release bob_priv_key_n within 2 days.
@@ -199,8 +200,15 @@ cannot change their choice of key-pairs after they have seen what choice the vic
 The product of the fee and the number of choices must be larger than the trade.  This means
 that on average an attacker would lose more in lost fees than they would gain in by stealing trade outputs.
 
-:1
+If either party aborts at this stage, then both parties lose their fee.  An attacker can cause
+their victim to lose fees but the attacker loses an equal amount.
 
+The trusted third party helps with fee recovery.  An honest participant can submit their N
+key pairs to the TTP after 7 days and get a refund of their fees.
+
+Step 4) Bob pays his deposit
+
+Once Bob has paid his deposit, he is pled
 
 ==References==
 
