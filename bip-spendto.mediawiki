@@ -1,0 +1,199 @@
+<pre>
+  BIP: CPRKV
+  Title: CHECKPRIVATEKEYVERIFY
+  Author: ****
+  Status: Draft
+  Type: Standards Track
+  Created: 2016-08-13
+</pre>
+
+==Abstract==
+
+This BIP describes a new opcode (CHECKTXOUTVERIFY) that extends the Bitcoin
+scripting language.  It allows a script to pattern match against one of the TxOut
+fields of the transaction. 
+
+==Summary==
+
+CHECKTXOUTVERIFY (CTOV) redefines the existing NOP4 opcode.  When executed it checks one of the
+TxOut fields of the transaction.  The top element on the stack encodes a scriptPubKey template.  The 
+second and third items on the stack are 32-bit unsigned integers.  The second item is the value of the 
+TxOut and the third item is the index.
+
+The script interpreter will terminate with an error if any of the following conditions occur.
+
+* the stack has fewer than 3 elements, or
+* the second or third items on the stack is more than 4 bytes, or
+* the third item is greater or equal to the number of outputs, or
+* the value of the output indexed by the third item is not equal to the second item, or
+* the scriptPubKey of the output indexed by the third item does not match the template given in the first item.
+
+Otherwise, script execution will continue as if a NOP had been executed.
+
+This is a simplified version of the proposal given by Moser, Eyal and Sirer [1], excluding the recursive
+functionality.
+
+==Template Matching==
+
+Except when handling the PUBKEY opcode, the template matcher does a byte for byte comparison between 
+the template and scriptPubKey in the TxOut.
+
+The PUBKEY opcode (0xFE) is used internally by the reference implementation.  This means that the opcode 
+is guaranteed to not be used in any actual script.
+
+This opcode is repurposed to indicate wildcard when used in templates.  When performing template matching, 
+any byte array push is considered a match for this opcode.  This means that it can be used to match digests as well
+as public keys.
+
+The wildcard match fails if the minimum size push is not used for a given byte array.
+
+This script forces the otuput to pay to a public key but any public key is valid.
+
+    [value] {PUBKEY CHECKSIG} CTOV 2DROP DROP [public key] CHECKSIG
+
+This requires an output that pays [value] to any public key.  The spender selects the output
+index since it isn't given.
+
+TODO:  If 2 inputs target the same output, should that cause a collision and a fail?  This can be protected
+by using unique keys.  It might be safer to make it illegal to do that, rather than hoping that users get it
+right.
+
+The maximum size of a 32-bit number is limited to approx 4.29 billion Satoshis (42.9 Bitcoins).
+
+TODO: The LSB for this range could be increased.  Exchanges would have to share their coin over multiple
+outputs.
+
+==Motivation==
+
+This opcode allows restrictions to be placed on the where funds are spent to.  
+
+TODO: add list of use cases
+
+===Chilled Vaults===
+
+Many exchanges operate a cold storage system.  When using cold storage, the spending keys for the funds
+held in cold storage are kept offline.  This prevents the funds from being stolen if the security 
+of the exchange server is compromised.  If the cold storage funds are required, this cold storage keys must
+be accessed manually.  
+
+This improves security at the expense of accessibility.  The more often the cold storage keys are
+accessed, the more likely they are to be compromised.
+
+With chilled vaults, funds can be automatically accessed but the transaction has a consensus enforced
+time window during which the funds can be redirected to cold storage.  Even if the server is compromised
+the hot wallet cannot circumvent that time window.
+
+The hot wallet can move funds from the chilled vault without the need to access the cold storage keys.
+
+The cold storage keys are only required in the case where the hot wallet is compromised.  This minimizes
+the requirements to access cold storage keys.
+
+Funds can be sent to the chilled vault by sending to this scriptPubKey.
+
+Template:
+
+    {IF [1 day] CSV DROP PUBKEY CHECKSIG ELSE [unique_cold_storage_pubkey] CHECKSIG}
+
+ScriptPubKey:
+
+    [value] [Template] CTOV 2DROP DROP [hot_wallet_pubkey] CHECKSIG
+
+This output can only be spent by a holder of the [hot_wallet_pubkey].  
+
+Since the index parameter is not included in the scriptPubKey, the spender can use any of the transaction
+outputs.  At least one output must have a value of [value] and a scriptPubKey which matches Template.
+
+The Template allows the output to be sent to any public key for the delayed path.  The cold storage key
+is mandatory.  This key should be unique to prevent multiple chilled vault addresses from spending to
+the same output.
+
+Using deterministic keys, the hot wallet can generate an unlimited number of cold storage public keys.
+
+==P2SH and SegWit==
+
+Raw scripts are rarely used for scriptPubKeys.  Pay to script hash (P2SH) and Pay to public key hash
+(P2PKH) are used extensivly to add an additional layer of protection for the outputs.  When segregated
+witness is deployed, it will represent another type of output.
+
+In most cases, these type of outputs can be supported directly.  
+
+===Pay to Public Key Hash===
+
+The template for pay to public key hash is
+
+    DUP HASH160 [pub_key_hash] EQUALVERIFY CHECKSIG
+
+This can be supported directly.
+
+    {DUP HASH160 PUBKEY EQUALVERIFY CHECKSIG}
+
+The PUBKEY opcode can be used to match the hash digest, since it matches any byte array.
+
+The output can be restricted to a particular public key by including the public key hash directly.
+
+    {DUP HASH160 [pub_key_hash] EQUALVERIFY CHECKSIG}
+
+===Pay to Script Hash===
+
+The template for pay to script hash is
+
+    HASH160 [20_byte_script_hash] EQUAL
+
+This can only be supported if the full script is known.
+
+   {HASH160 [20_byte_script_hash] EQUAL}
+
+The use of the PUBKEY opcode, to allow wildcard matching in the script, is not possible.
+
+===Pay to Witness Script Hash===
+
+This script works like P2SH, except the signature is moved to the witness data.
+
+    OP_0 [32_byte_digest]
+
+The template is simply
+
+    {OP_0 [32_byte_digest]}
+
+This has the same limitations as P2SH.  The PUBKEY opcode cannot be used for wildcard matches.
+
+===Pay to Witness Public Key Hash===
+
+This script pays to a paricular public key hash.  It operates the same as pay to public key hash, except the 
+signature is moved to the witness data.
+
+    OP_0 [20_byte_public_key_hash]
+
+This can be supported directly, and with pay to public key hash.  If the PUBKEY wildcard is used, then any public key hash can be matched.  
+
+Since the wildcard match can match a byte array of any length, this inherently also allows paying to pay 
+to witness script hash outputs too.
+This may not be sufficiently restrictive in some cases.
+
+    {OP_0 PUBKEY}
+
+The public key can be hard-coded.
+
+    {OP_0 [20_byte_pub_key_hash]}
+
+==Deployment==
+
+The BIP-9 soft fork process could be used.
+
+===SPV Clients===
+
+SPV clients do not perform transaction validation, so are unaffected.
+
+==References==
+
+[1] http://fc16.ifca.ai/bitcoin/papers/MES16.pdf
+
+==Implementations==
+
+TBD
+
+==Copyright==
+
+This document is placed in the public domain.
+
+
